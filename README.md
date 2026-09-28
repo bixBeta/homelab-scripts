@@ -60,8 +60,17 @@ sh push-to-tailnet.sh -n results/ 100.x.y.z:/data/      # dry run
 ```
 
 `-n` dry run, `-k` keep symlinks (default sends what they point at), `-q`
-quiet. A trailing slash on the source copies its contents. It never deletes
-anything on the far side.
+quiet, `-l` list every tailnet machine with its ssh alias, online state and
+whether your key gets in. A trailing slash on the source copies its
+contents. It never deletes anything on the far side.
+
+```
+$ sh push-to-tailnet.sh -l
+ALIAS    MACHINE                ADDRESS          STATE    SSH
+mac      my-laptop              100.x.y.z        online   ok
+zima     my-server              100.x.y.z        online   ok
+storm    spare-box              100.x.y.z        offline  -
+```
 
 It exists because inbound SSH to such machines often requires two-factor
 auth, which can't be automated — so the transfer has to be pushed, not
