@@ -1,0 +1,12 @@
+# Filled-in copies of the FTP template hold real passwords. Name job copies
+# ftp-mirror-<job>.sh so only the placeholder template can be committed.
+ftp-mirror-*.sh
+ftp/ftp-mirror-*.sh
+
+# Output of tailscale/ts-netcheck.sh: public IP, routes, DNS resolvers.
+ts-netcheck.txt
+
+*.env
+netrc
+.netrc
+.DS_Store

@@ -1,0 +1,140 @@
+{
+  "name": "Tailscale key expiry",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Daily 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-380, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tailscale.com/api/v2/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "REPLACE_WITH_TS_CLIENT_ID"
+            },
+            {
+              "name": "client_secret",
+              "value": "REPLACE_WITH_TS_CLIENT_SECRET"
+            },
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Get OAuth token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://api.tailscale.com/api/v2/tailnet/-/devices",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "List devices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Warn WARN_DAYS ahead. Nodes with key expiry disabled cannot expire.\n// All-clear runs stay silent except on the weekly heartbeat day, so a\n// long quiet stretch still proves the workflow is alive.\nconst WARN_DAYS = 7;\nconst HEARTBEAT_DAY = 1; // 0=Sun, 1=Mon\n\nconst devices = $input.first().json.devices || [];\nconst now = Date.now();\n\nconst expired = [], expiring = [], healthy = [];\nlet disabled = 0;\n\nfor (const d of devices) {\n  const name = String(d.name || d.hostname || d.id || '?').split('.')[0];\n  if (d.keyExpiryDisabled) { disabled++; continue; }\n  const t = Date.parse(d.expires);\n  // Tailscale uses year 1 as the zero value for \"no expiry\".\n  if (!t || new Date(t).getUTCFullYear() < 2000) continue;\n  const days = Math.floor((t - now) / 86400000);\n  const row = { name, days, date: new Date(t).toISOString().slice(0, 10) };\n  if (days < 0) expired.push(row);\n  else if (days <= WARN_DAYS) expiring.push(row);\n  else healthy.push(row);\n}\n\nconst byDays = (a, b) => a.days - b.days;\nexpired.sort(byDays); expiring.sort(byDays); healthy.sort(byDays);\n\nif (expired.length || expiring.length) {\n  const lines = [\n    ...expired.map(r => `EXPIRED ${Math.abs(r.days)}d ago: ${r.name} (${r.date})`),\n    ...expiring.map(r => `expires in ${r.days}d: ${r.name} (${r.date})`),\n    'Re-authenticate the machine, or disable key expiry in the admin console.',\n  ];\n  return [{ json: {\n    title: 'Tailscale key expiry',\n    priority: 'high',\n    tags: 'warning',\n    message: lines.join('\\n'),\n  } }];\n}\n\n// Nothing to warn about. Only speak up on the heartbeat day.\nif (new Date().getDay() !== HEARTBEAT_DAY) return [];\n\nconst nearest = healthy[0];\nreturn [{ json: {\n  title: 'Tailscale keys: all clear',\n  priority: 'default',\n  tags: 'white_check_mark',\n  message: [\n    nearest\n      ? `Nearest: ${nearest.name} in ${nearest.days}d (${nearest.date})`\n      : 'No devices with expiry enabled.',\n    `${devices.length} devices checked, ${disabled} with expiry disabled`,\n  ].join('\\n'),\n} }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Evaluate expiry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_NTFY_URL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Title",
+              "value": "={{ $json.title }}"
+            },
+            {
+              "name": "Priority",
+              "value": "={{ $json.priority }}"
+            },
+            {
+              "name": "Tags",
+              "value": "={{ $json.tags }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ $json.message }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Push to ntfy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 0]
+    }
+  ],
+  "connections": {
+    "Daily 09:00": {
+      "main": [[{ "node": "Get OAuth token", "type": "main", "index": 0 }]]
+    },
+    "Get OAuth token": {
+      "main": [[{ "node": "List devices", "type": "main", "index": 0 }]]
+    },
+    "List devices": {
+      "main": [[{ "node": "Evaluate expiry", "type": "main", "index": 0 }]]
+    },
+    "Evaluate expiry": {
+      "main": [[{ "node": "Push to ntfy", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

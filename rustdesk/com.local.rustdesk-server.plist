@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps RustDesk's incoming-connection server running, so this Mac stays
+  reachable over Tailscale (100.x.y.z:21118) whether or not the RustDesk
+  window is open. Starts at login; launchd restarts it if it exits.
+
+  Stop:   launchctl bootout gui/$(id -u)/com.local.rustdesk-server
+  Start:  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.rustdesk-server.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.local.rustdesk-server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/RustDesk.app/Contents/MacOS/RustDesk</string>
+    <string>--server</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Don't respawn in a tight loop if it keeps failing. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/rustdesk-server.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/rustdesk-server.log</string>
+</dict>
+</plist>

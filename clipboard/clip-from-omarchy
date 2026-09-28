@@ -1,0 +1,36 @@
+#!/bin/sh
+# Pull omarchy's Wayland clipboard into this Mac's clipboard over Tailscale.
+# Bound to ⌃⌥⌘V via the Shortcuts app; reports the result as a notification.
+
+export LANG=en_US.UTF-8
+
+# Text travels as argv, never spliced into the AppleScript source.
+notify() { # title subtitle message
+  osascript \
+    -e 'on run argv' \
+    -e 'display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv)' \
+    -e 'end run' \
+    "$1" "$2" "$3" 2>/dev/null
+}
+
+preview() {
+  perl -CSD -0777 -ne 's/\s+/ /g; s/^ | $//g; print length($_) > 60 ? substr($_, 0, 60) . "\x{2026}" : $_' "$1"
+}
+chars() { perl -CSD -0777 -ne 'print length' "$1"; }
+
+# Go through a temp file rather than $(...), which strips trailing newlines.
+tmp=$(mktemp) || exit 1
+trap 'rm -f "$tmp"' EXIT
+
+if ssh omarchy-clip paste >"$tmp" 2>/tmp/clip-from-omarchy.err; then
+  # Don't replace the Mac clipboard with nothing.
+  if [ ! -s "$tmp" ]; then
+    notify "Nothing copied" "omarchy's clipboard is empty" "Or it holds an image, not text. Your Mac clipboard is unchanged."
+    exit 1
+  fi
+  pbcopy <"$tmp"
+  notify "Copied from omarchy" "$(chars "$tmp") characters" "$(preview "$tmp")"
+else
+  notify "Couldn't reach omarchy" "Your Mac clipboard is unchanged" "Check Tailscale is on for both machines and omarchy is logged in."
+  exit 1
+fi
