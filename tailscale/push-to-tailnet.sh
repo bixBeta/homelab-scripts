@@ -119,7 +119,7 @@ if [ "$LIST" = 1 ]; then
     alias_name=$(ssh_alias_for "$ip")
     reach="-"
     if [ "$state" = online ]; then
-      if ssh -o BatchMode=yes -o ConnectTimeout=5 \
+      if ssh -n -o BatchMode=yes -o ConnectTimeout=5 \
              -o StrictHostKeyChecking=accept-new \
              -o ProxyCommand="$PROXY" \
              ${SSH_KEY:+-i "$SSH_KEY"} "$ip" true >/dev/null 2>&1; then
