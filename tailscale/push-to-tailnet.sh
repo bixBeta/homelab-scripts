@@ -85,11 +85,17 @@ detect_proxy() {
   fi
 }
 
-# Short name for an address, read from ~/.ssh/config.
-ssh_alias_for() {
+# "alias<TAB>user" for an address, from ~/.ssh/config. Either may be empty.
+# Collects each Host block's HostName and User, so per-host accounts show up:
+# testing every machine as the local username hides a wrong User entirely.
+ssh_entry_for() {
   awk -v want="$1" '
-    /^[Hh]ost / { h=$2 }
-    /^[[:space:]]*[Hh]ost[Nn]ame[[:space:]]/ { if ($2 == want && h != "") { print h; exit } }
+    # exit runs END, which calls flush again — guard so it prints once.
+    function flush() { if (!done && hn == want && h != "") { print h "\t" u; done = 1; exit } }
+    /^[Hh]ost /                              { flush(); h = $2; hn = ""; u = ""; next }
+    /^[[:space:]]*[Hh]ost[Nn]ame[[:space:]]/ { hn = $2 }
+    /^[[:space:]]*[Uu]ser[[:space:]]/        { u  = $2 }
+    END { flush() }
   ' "$HOME/.ssh/config" 2>/dev/null
 }
 
@@ -108,7 +114,7 @@ shift $((OPTIND - 1))
 if [ "$LIST" = 1 ]; then
   ensure_daemon
   detect_proxy
-  printf '%-8s %-22s %-16s %-8s %s\n' ALIAS MACHINE ADDRESS STATE SSH
+  printf '%-8s %-22s %-16s %-9s %-8s %s\n' ALIAS MACHINE ADDRESS USER STATE SSH
   "$TS_BIN/tailscale" --socket="$SOCK" status 2>/dev/null |
     awk 'NF && $1 ~ /^100\./ {
            rest = ""
@@ -116,19 +122,25 @@ if [ "$LIST" = 1 ]; then
            print $1 "\t" $2 "\t" (rest ~ /offline/ ? "offline" : "online")
          }' > "$TS_DIR/.peers.$$"
   while IFS='	' read -r ip name state; do
-    alias_name=$(ssh_alias_for "$ip")
+    entry=$(ssh_entry_for "$ip")
+    alias_name=${entry%%	*}
+    user=${entry#*	}
+    [ "$user" = "$entry" ] && user=""      # no tab: no User line
     reach="-"
     if [ "$state" = online ]; then
+      # Test as the configured user, not blindly as the local one.
       if ssh -n -o BatchMode=yes -o ConnectTimeout=5 \
              -o StrictHostKeyChecking=accept-new \
              -o ProxyCommand="$PROXY" \
-             ${SSH_KEY:+-i "$SSH_KEY"} "$ip" true >/dev/null 2>&1; then
+             ${SSH_KEY:+-i "$SSH_KEY"} \
+             "${user:+$user@}$ip" true >/dev/null 2>&1; then
         reach="ok"
       else
         reach="no key"
       fi
     fi
-    printf '%-8s %-22s %-16s %-8s %s\n' "${alias_name:--}" "$name" "$ip" "$state" "$reach"
+    printf '%-8s %-22s %-16s %-9s %-8s %s\n' \
+      "${alias_name:--}" "$name" "$ip" "${user:-$(id -un)}" "$state" "$reach"
   done < "$TS_DIR/.peers.$$"
   rm -f "$TS_DIR/.peers.$$"
   exit 0
